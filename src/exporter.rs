@@ -3,7 +3,9 @@
 //!
 //! Every backend kind maps into the same metric names, so one Grafana query
 //! covers Ollama, vLLM, llama.cpp and mini-engine workers alike. Each sample
-//! carries `kind` and `instance` labels, plus `model` where it applies.
+//! carries `kind` and `endpoint` labels, plus `model` where it applies.
+//! (Not `instance`: Prometheus sets that on every scrape to the address it
+//! scraped, here llmtop itself, and renames a clashing exported label.)
 
 use crate::backend::BackendId;
 use crate::snapshot::{ModelStats, Placement};
@@ -131,7 +133,7 @@ pub fn encode(state: &State) -> String {
 /// Label pairs borrow from the id and model they describe, so building them
 /// copies no strings.
 fn backend_labels(id: &BackendId) -> Vec<(&str, &str)> {
-    vec![("kind", id.kind), ("instance", &id.instance)]
+    vec![("kind", id.kind), ("endpoint", &id.instance)]
 }
 
 fn model_labels<'a>(id: &'a BackendId, m: &'a ModelStats) -> Vec<(&'a str, &'a str)> {
@@ -231,7 +233,7 @@ mod tests {
         let text = encode(&sample_state());
         let samples = prom::parse(&text);
 
-        let ollama = [("kind", "ollama"), ("instance", "localhost:11434")];
+        let ollama = [("kind", "ollama"), ("endpoint", "localhost:11434")];
         assert_eq!(value(&samples, "llmtop_backend_up", &ollama), Some(1.0));
         assert_eq!(value(&samples, "llmtop_backend_up", &[("kind", "vllm")]), Some(0.0));
         assert_eq!(value(&samples, "llmtop_backend_up", &[("kind", "llama.cpp")]), None, "pending");

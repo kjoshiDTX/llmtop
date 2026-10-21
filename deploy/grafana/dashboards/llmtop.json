@@ -42,18 +42,18 @@
         "sort": 1
       },
       {
-        "name": "instance",
-        "label": "Instance",
+        "name": "endpoint",
+        "label": "Endpoint",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "prometheus"
         },
         "query": {
-          "query": "label_values(llmtop_backend_up{kind=~\"$kind\"}, instance)",
-          "refId": "instance"
+          "query": "label_values(llmtop_backend_up{kind=~\"$kind\"}, endpoint)",
+          "refId": "endpoint"
         },
-        "definition": "label_values(llmtop_backend_up{kind=~\"$kind\"}, instance)",
+        "definition": "label_values(llmtop_backend_up{kind=~\"$kind\"}, endpoint)",
         "refresh": 2,
         "includeAll": true,
         "multi": true,
@@ -89,11 +89,11 @@
         },
         "enable": true,
         "iconColor": "orange",
-        "expr": "sum by (instance, alert) (increase(llmtop_alerts_total{alert=~\"fell_back_to_cpu|kv_cache_high|model_swapped|backend_down\"}[1m])) > 0",
+        "expr": "sum by (endpoint, alert) (increase(llmtop_alerts_total{alert=~\"fell_back_to_cpu|kv_cache_high|model_swapped|backend_down\"}[1m])) > 0",
         "step": "60s",
         "titleFormat": "{{alert}}",
-        "textFormat": "{{instance}}",
-        "tagKeys": "alert,instance"
+        "textFormat": "{{endpoint}}",
+        "tagKeys": "alert,endpoint"
       }
     ]
   },
@@ -120,7 +120,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(llmtop_backend_up{kind=~\"$kind\",instance=~\"$instance\"})",
+          "expr": "sum(llmtop_backend_up{kind=~\"$kind\",endpoint=~\"$endpoint\"})",
           "legendFormat": ""
         }
       ],
@@ -162,7 +162,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count(llmtop_backend_up{kind=~\"$kind\",instance=~\"$instance\"} == 0) or vector(0)",
+          "expr": "count(llmtop_backend_up{kind=~\"$kind\",endpoint=~\"$endpoint\"} == 0) or vector(0)",
           "legendFormat": ""
         }
       ],
@@ -208,7 +208,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(llmtop_alerts_total{kind=~\"$kind\",instance=~\"$instance\",alert=~\"fell_back_to_cpu|kv_cache_high|model_swapped|backend_down\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(llmtop_alerts_total{kind=~\"$kind\",endpoint=~\"$endpoint\",alert=~\"fell_back_to_cpu|kv_cache_high|model_swapped|backend_down\"}[$__range])) or vector(0)",
           "legendFormat": ""
         }
       ],
@@ -255,7 +255,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(llmtop_generation_tokens_per_second{kind=~\"$kind\",instance=~\"$instance\"})",
+          "expr": "sum(llmtop_generation_tokens_per_second{kind=~\"$kind\",endpoint=~\"$endpoint\"})",
           "legendFormat": ""
         }
       ],
@@ -299,8 +299,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "llmtop_generation_tokens_per_second{kind=~\"$kind\",instance=~\"$instance\"}",
-          "legendFormat": "{{instance}} {{model}}"
+          "expr": "llmtop_generation_tokens_per_second{kind=~\"$kind\",endpoint=~\"$endpoint\"}",
+          "legendFormat": "{{endpoint}} {{model}}"
         }
       ],
       "fieldConfig": {
@@ -338,8 +338,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "llmtop_kv_cache_usage_ratio{kind=~\"$kind\",instance=~\"$instance\"}",
-          "legendFormat": "{{instance}} {{model}}"
+          "expr": "llmtop_kv_cache_usage_ratio{kind=~\"$kind\",endpoint=~\"$endpoint\"}",
+          "legendFormat": "{{endpoint}} {{model}}"
         }
       ],
       "fieldConfig": {
@@ -399,8 +399,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "llmtop_requests_running{kind=~\"$kind\",instance=~\"$instance\"}",
-          "legendFormat": "{{instance}} {{model}}"
+          "expr": "llmtop_requests_running{kind=~\"$kind\",endpoint=~\"$endpoint\"}",
+          "legendFormat": "{{endpoint}} {{model}}"
         }
       ],
       "fieldConfig": {
@@ -439,8 +439,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "llmtop_requests_waiting{kind=~\"$kind\",instance=~\"$instance\"}",
-          "legendFormat": "{{instance}} {{model}}"
+          "expr": "llmtop_requests_waiting{kind=~\"$kind\",endpoint=~\"$endpoint\"}",
+          "legendFormat": "{{endpoint}} {{model}}"
         }
       ],
       "fieldConfig": {
@@ -479,8 +479,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "llmtop_backend_up{kind=~\"$kind\",instance=~\"$instance\"}",
-          "legendFormat": "{{kind}} {{instance}}"
+          "expr": "llmtop_backend_up{kind=~\"$kind\",endpoint=~\"$endpoint\"}",
+          "legendFormat": "{{kind}} {{endpoint}}"
         }
       ],
       "fieldConfig": {
@@ -543,7 +543,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (alert) (increase(llmtop_alerts_total{kind=~\"$kind\",instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by (alert) (increase(llmtop_alerts_total{kind=~\"$kind\",endpoint=~\"$endpoint\"}[$__range]))",
           "legendFormat": "{{alert}}"
         }
       ],
@@ -597,8 +597,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "llmtop_model_gpu_ratio{kind=~\"$kind\",instance=~\"$instance\"}",
-          "legendFormat": "{{instance}} {{model}}"
+          "expr": "llmtop_model_gpu_ratio{kind=~\"$kind\",endpoint=~\"$endpoint\"}",
+          "legendFormat": "{{endpoint}} {{model}}"
         }
       ],
       "fieldConfig": {

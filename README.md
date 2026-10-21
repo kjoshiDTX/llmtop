@@ -89,13 +89,13 @@ The `deploy/` folder has a Docker Compose setup with Prometheus and a provisione
 
 3. Open http://localhost:3000. The llmtop dashboard is the home page, with no login needed to view it. To edit it, sign in as `admin` / `admin`; Grafana asks you to change that on first sign-in. If panels stay empty, open http://localhost:9090/targets and check that the `llmtop` target is up.
 
-The dashboard shows throughput, KV-cache usage with the 80% and 90% alert lines, running and queued requests, backend status over time, alert counts by type, GPU placement (Ollama), and host CPU and memory. Warnings also appear as annotations on every time-series panel. Use the **Backend kind** and **Instance** menus at the top to filter.
+The dashboard shows throughput, KV-cache usage with the 80% and 90% alert lines, running and queued requests, backend status over time, alert counts by type, GPU placement (Ollama), and host CPU and memory. Warnings also appear as annotations on every time-series panel. Use the **Backend kind** and **Endpoint** menus at the top to filter.
 
-Stop it with `docker compose -f deploy/docker-compose.yml down`.
+Stop it with `docker compose -f deploy/docker-compose.yml down`. Prometheus keeps its data in a Docker volume between runs; add `-v` to delete it too.
 
 ### Exported metrics
 
-Every metric has `kind` and `instance` labels; per-model metrics add `model`.
+Every backend metric has `kind` and `endpoint` labels (e.g. `mini-engine`, `localhost:8001`); per-model metrics add `model`. The label is `endpoint` rather than `instance` because Prometheus sets `instance` itself, to the address of llmtop.
 
 | Metric | Type | Meaning |
 |---|---|---|
