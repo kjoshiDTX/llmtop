@@ -1,0 +1,26 @@
+# Hand-written in the shape of vLLM's /metrics output (metric names from
+# vllm/v1/metrics/loggers.py). Two engines serve one model, as with data
+# parallelism. Replace with a recorded response from a real worker when you can.
+# HELP vllm:num_requests_running Number of requests in model execution batches.
+# TYPE vllm:num_requests_running gauge
+vllm:num_requests_running{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 6.0
+vllm:num_requests_running{engine="1",model_name="Qwen/Qwen2.5-7B-Instruct"} 4.0
+# HELP vllm:num_requests_waiting Number of requests waiting to be processed.
+# TYPE vllm:num_requests_waiting gauge
+vllm:num_requests_waiting{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 2.0
+vllm:num_requests_waiting{engine="1",model_name="Qwen/Qwen2.5-7B-Instruct"} 0.0
+# HELP vllm:kv_cache_usage_perc KV-cache usage. 1 means 100 percent usage.
+# TYPE vllm:kv_cache_usage_perc gauge
+vllm:kv_cache_usage_perc{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 0.82
+vllm:kv_cache_usage_perc{engine="1",model_name="Qwen/Qwen2.5-7B-Instruct"} 0.41
+# HELP vllm:generation_tokens_total Number of generation tokens processed.
+# TYPE vllm:generation_tokens_total counter
+vllm:generation_tokens_total{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 120000.0
+vllm:generation_tokens_total{engine="1",model_name="Qwen/Qwen2.5-7B-Instruct"} 80000.0
+# HELP vllm:generation_tokens_created Number of generation tokens processed.
+# TYPE vllm:generation_tokens_created gauge
+vllm:generation_tokens_created{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 1.7610e+09
+# HELP vllm:e2e_request_latency_seconds Histogram of e2e request latency in seconds.
+# TYPE vllm:e2e_request_latency_seconds histogram
+vllm:e2e_request_latency_seconds_bucket{engine="0",le="1.0",model_name="Qwen/Qwen2.5-7B-Instruct"} 14.0
+vllm:e2e_request_latency_seconds_bucket{engine="0",le="+Inf",model_name="Qwen/Qwen2.5-7B-Instruct"} 30.0
