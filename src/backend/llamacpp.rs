@@ -6,7 +6,7 @@
 //! computed from `/slots` instead; the old `kv_cache_usage_ratio` gauge is
 //! used if a server still sends it and `/slots` is unavailable.
 
-use super::{get_text, normalize_url, Backend, CounterRate};
+use super::{get_text, Backend, BackendId, CounterRate};
 use crate::prom;
 use crate::snapshot::{ModelStats, Snapshot};
 use anyhow::{bail, Context, Result};
@@ -73,7 +73,7 @@ impl Slot {
 }
 
 pub struct LlamaCpp {
-    name: String,
+    id: BackendId,
     base_url: String,
     http: reqwest::Client,
     model: Option<String>,
@@ -82,9 +82,9 @@ pub struct LlamaCpp {
 
 impl LlamaCpp {
     pub fn new(url: &str, http: reqwest::Client) -> Self {
-        let (base_url, host) = normalize_url(url);
+        let (base_url, id) = BackendId::from_url("llama.cpp", url);
         Self {
-            name: format!("llama.cpp {host}"),
+            id,
             base_url,
             http,
             model: None,
@@ -116,8 +116,8 @@ impl LlamaCpp {
 impl Backend for LlamaCpp {
     type Raw = Raw;
 
-    fn name(&self) -> &str {
-        &self.name
+    fn id(&self) -> &BackendId {
+        &self.id
     }
 
     async fn fetch(&mut self) -> Result<Raw> {

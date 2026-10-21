@@ -1,0 +1,33 @@
+# Prometheus and Grafana for llmtop's exporter.
+#
+# Start llmtop on the host first, pointed at the scheduler's workers:
+#   llmtop --no-ollama --mini-engine localhost:8001 --mini-engine localhost:8002 --listen 0.0.0.0:9898
+# then:
+#   docker compose -f deploy/docker-compose.yml up
+# and open http://localhost:3000 (the llmtop dashboard is the home page).
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      # Docker Desktop defines host.docker.internal already; this makes it work on Linux too.
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Local use: anyone who can reach port 3000 can view without logging in.
+      # Editing still needs the admin login (admin / admin on first start).
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/llmtop.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus

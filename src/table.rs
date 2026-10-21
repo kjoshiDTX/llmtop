@@ -35,8 +35,8 @@ pub fn render(state: &State) -> String {
     }
 
     let _ = writeln!(out, "{}", row(HEADER.map(String::from)));
-    for (name, status) in &state.backends {
-        let name = truncate(name, 26);
+    for (id, status) in &state.backends {
+        let name = truncate(&id.to_string(), 26);
         match status {
             BackendStatus::Pending => {
                 let _ = writeln!(out, "{name:<26} polling…");
@@ -138,7 +138,12 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::BackendId;
     use crate::snapshot::Snapshot;
+
+    fn id(kind: &'static str, instance: &str) -> BackendId {
+        BackendId { kind, instance: instance.into() }
+    }
 
     #[test]
     fn formats_bytes() {
@@ -154,11 +159,11 @@ mod tests {
     #[test]
     fn renders_each_backend_status() {
         let mut state = State::default();
-        state.backends.insert("a pending".into(), BackendStatus::Pending);
-        state.backends.insert("b down".into(), BackendStatus::Down("connection refused".into()));
-        state.backends.insert("c empty".into(), BackendStatus::Up(Snapshot::default()));
+        state.backends.insert(id("a", "pending"), BackendStatus::Pending);
+        state.backends.insert(id("b", "down"), BackendStatus::Down("connection refused".into()));
+        state.backends.insert(id("c", "empty"), BackendStatus::Up(Snapshot::default()));
         let model = ModelStats { kv_cache_usage: Some(0.82), ..ModelStats::new("qwen") };
-        state.backends.insert("d up".into(), BackendStatus::Up(Snapshot { models: vec![model] }));
+        state.backends.insert(id("d", "up"), BackendStatus::Up(Snapshot { models: vec![model] }));
 
         let out = render(&state);
         assert!(out.contains("CPU/RAM: sampling…"));
@@ -176,17 +181,17 @@ mod tests {
         use crate::state::Alert;
 
         let mut state = State::default();
-        state.backends.insert("ollama x".into(), BackendStatus::Up(Snapshot::default()));
+        state.backends.insert(id("ollama", "x"), BackendStatus::Up(Snapshot::default()));
         for i in 0..10 {
             state.alerts.push_back(Alert {
                 at: chrono::Local::now(),
-                backend: "ollama x".into(),
+                backend: id("ollama", "x"),
                 event: Event::ModelLoaded { model: format!("m{i}") },
             });
         }
         state.alerts.push_back(Alert {
             at: chrono::Local::now(),
-            backend: "ollama x".into(),
+            backend: id("ollama", "x"),
             event: Event::FellBackToCpu { model: "q".into(), gpu_share: 0.0 },
         });
 

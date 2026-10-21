@@ -1,5 +1,6 @@
 mod backend;
 mod detect;
+mod exporter;
 mod prom;
 mod record;
 #[cfg(test)]
@@ -9,14 +10,18 @@ mod state;
 mod system;
 mod table;
 
-use anyhow::Result;
-use backend::{LlamaCpp, Ollama, Vllm};
+use anyhow::{Context, Result};
+use backend::{LlamaCpp, MiniEngine, Ollama, Vllm};
 use clap::Parser;
 use record::Recorder;
 use state::{spawn_poller, spawn_system_sampler, PollConfig, Shared};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+
+/// How often to poll when serving metrics without `--watch`.
+const SERVE_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Watch local LLM runtimes and the host they run on.
 #[derive(Parser)]
@@ -38,6 +43,10 @@ struct Args {
     #[arg(long, value_name = "URL")]
     llamacpp: Vec<String>,
 
+    /// llm-inference-scheduler worker URL. Repeatable.
+    #[arg(long, value_name = "URL")]
+    mini_engine: Vec<String>,
+
     /// Refresh every N seconds instead of printing once.
     #[arg(short, long, value_name = "SECS")]
     watch: Option<u64>,
@@ -45,12 +54,28 @@ struct Args {
     /// Append every raw backend response to FILE as JSON lines, for replay tests.
     #[arg(long, value_name = "FILE")]
     record: Option<PathBuf>,
+
+    /// Serve Prometheus metrics on ADDR (e.g. 127.0.0.1:9898). Without
+    /// --watch, runs headless and polls every 5 seconds.
+    #[arg(long, value_name = "ADDR")]
+    listen: Option<SocketAddr>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let every = args.watch.map(|secs| Duration::from_secs(secs.max(1)));
+    let every = match (args.watch, args.listen) {
+        (Some(secs), _) => Some(Duration::from_secs(secs.max(1))),
+        (None, Some(_)) => Some(SERVE_INTERVAL),
+        (None, None) => None,
+    };
+    // Bind before polling starts, so a taken port fails fast with a clear error.
+    let listener = match args.listen {
+        Some(addr) => Some(
+            tokio::net::TcpListener::bind(addr).await.with_context(|| format!("can't listen on {addr}"))?,
+        ),
+        None => None,
+    };
     let shared = Arc::new(Shared::default());
     // Subscribe before any task starts, so no early update is missed.
     let mut changed = shared.changed.subscribe();
@@ -73,6 +98,20 @@ async fn main() -> Result<()> {
     for url in &args.llamacpp {
         let llamacpp = LlamaCpp::new(url, http.clone());
         tasks.push(spawn_poller(llamacpp, Arc::clone(&shared), config.clone()));
+    }
+    for url in &args.mini_engine {
+        let worker = MiniEngine::new(url, http.clone());
+        tasks.push(spawn_poller(worker, Arc::clone(&shared), config.clone()));
+    }
+
+    if let Some(listener) = listener {
+        let addr = listener.local_addr()?;
+        let server = tokio::spawn(exporter::serve(listener, Arc::clone(&shared)));
+        if args.watch.is_none() {
+            eprintln!("llmtop: serving metrics on http://{addr}/metrics");
+            // The pollers loop forever; the server returns only on an error.
+            return Ok(server.await??);
+        }
     }
 
     if every.is_none() {

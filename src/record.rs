@@ -6,6 +6,7 @@
 //! {"backend":"vllm gpu1:8000","t_ms":1004,"error":"could not reach ..."}
 //! ```
 
+use crate::backend::BackendId;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -41,7 +42,7 @@ impl Recorder {
         Ok(Self { file: Mutex::new(file), start: Instant::now() })
     }
 
-    pub fn write<R: Serialize>(&self, backend: &str, at: Instant, fetched: &Result<R>) -> Result<()> {
+    pub fn write<R: Serialize>(&self, backend: &BackendId, at: Instant, fetched: &Result<R>) -> Result<()> {
         let line = Line {
             backend: backend.to_string(),
             t_ms: at.saturating_duration_since(self.start).as_millis() as u64,

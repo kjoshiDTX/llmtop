@@ -2,7 +2,7 @@
 //! `model_name` label, and with data parallelism there is one series per
 //! engine (the `engine` label), so values are combined per model.
 
-use super::{get_text, normalize_url, Backend, CounterRate};
+use super::{get_text, Backend, BackendId, CounterRate};
 use crate::prom;
 use crate::snapshot::{ModelStats, Snapshot};
 use anyhow::Result;
@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 pub struct Vllm {
-    name: String,
+    id: BackendId,
     base_url: String,
     http: reqwest::Client,
     rates: CounterRate,
@@ -18,8 +18,8 @@ pub struct Vllm {
 
 impl Vllm {
     pub fn new(url: &str, http: reqwest::Client) -> Self {
-        let (base_url, host) = normalize_url(url);
-        Self { name: format!("vllm {host}"), base_url, http, rates: CounterRate::default() }
+        let (base_url, id) = BackendId::from_url("vllm", url);
+        Self { id, base_url, http, rates: CounterRate::default() }
     }
 }
 
@@ -27,8 +27,8 @@ impl Backend for Vllm {
     /// The `/metrics` response body.
     type Raw = String;
 
-    fn name(&self) -> &str {
-        &self.name
+    fn id(&self) -> &BackendId {
+        &self.id
     }
 
     async fn fetch(&mut self) -> Result<String> {

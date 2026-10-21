@@ -1,10 +1,12 @@
 //! The `Backend` trait and the pieces adapters share.
 
 mod llamacpp;
+mod mini_engine;
 mod ollama;
 mod vllm;
 
 pub use llamacpp::LlamaCpp;
+pub use mini_engine::MiniEngine;
 pub use ollama::Ollama;
 pub use vllm::Vllm;
 
@@ -13,8 +15,33 @@ use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fmt;
 use std::future::Future;
 use std::time::{Duration, Instant};
+
+/// Which backend a value came from: its kind and the host it runs on. Kept
+/// as two fields, not one string, so the exporter can emit them as separate
+/// Prometheus labels. Deriving `Ord` sorts by kind, then instance.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BackendId {
+    pub kind: &'static str,
+    pub instance: String,
+}
+
+/// Displays as `vllm localhost:8000`, the label used in the table and in recordings.
+impl fmt::Display for BackendId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.kind, self.instance)
+    }
+}
+
+impl BackendId {
+    /// Normalizes `url` and returns it with the id built from its host.
+    fn from_url(kind: &'static str, url: &str) -> (String, Self) {
+        let (base_url, instance) = normalize_url(url);
+        (base_url, Self { kind, instance })
+    }
+}
 
 /// One LLM runtime llmtop can watch.
 ///
@@ -29,8 +56,8 @@ pub trait Backend: Send {
     /// back from a recording.
     type Raw: Serialize + DeserializeOwned + Send;
 
-    /// A label such as `vllm localhost:8000`. The `&str` borrows from `self`.
-    fn name(&self) -> &str;
+    /// The returned reference borrows from `self`.
+    fn id(&self) -> &BackendId;
 
     /// Written as "returns a future that is `Send`" rather than as an
     /// `async fn`, because each backend runs in its own `tokio::spawn`ed task

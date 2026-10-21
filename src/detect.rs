@@ -54,6 +54,38 @@ pub enum Severity {
 }
 
 impl Event {
+    /// Every value `name` can return. The exporter starts each counter at 0,
+    /// because Prometheus's `increase()` can't see a series' first increment
+    /// if the series only appears when it reaches 1.
+    pub const NAMES: [&'static str; 10] = [
+        "backend_down",
+        "backend_recovered",
+        "model_loaded",
+        "model_unloaded",
+        "model_reloaded",
+        "model_swapped",
+        "fell_back_to_cpu",
+        "back_on_gpu",
+        "kv_cache_high",
+        "kv_cache_recovered",
+    ];
+
+    /// A stable snake_case name, used as the `alert` label in exported metrics.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Event::BackendDown { .. } => "backend_down",
+            Event::BackendRecovered => "backend_recovered",
+            Event::ModelLoaded { .. } => "model_loaded",
+            Event::ModelUnloaded { .. } => "model_unloaded",
+            Event::ModelReloaded { .. } => "model_reloaded",
+            Event::ModelSwapped { .. } => "model_swapped",
+            Event::FellBackToCpu { .. } => "fell_back_to_cpu",
+            Event::BackOnGpu { .. } => "back_on_gpu",
+            Event::KvCacheHigh { .. } => "kv_cache_high",
+            Event::KvCacheRecovered { .. } => "kv_cache_recovered",
+        }
+    }
+
     pub fn severity(&self) -> Severity {
         match self {
             Event::BackendDown { .. }
@@ -360,6 +392,25 @@ mod tests {
             events,
             vec![Event::BackendDown { error: "connection refused".into() }, Event::BackendRecovered]
         );
+    }
+
+    #[test]
+    fn names_lists_every_variant_once() {
+        let model = || "m".to_string();
+        let all = [
+            Event::BackendDown { error: "e".into() },
+            Event::BackendRecovered,
+            Event::ModelLoaded { model: model() },
+            Event::ModelUnloaded { model: model() },
+            Event::ModelReloaded { model: model() },
+            Event::ModelSwapped { from: model(), to: model() },
+            Event::FellBackToCpu { model: model(), gpu_share: 0.0 },
+            Event::BackOnGpu { model: model() },
+            Event::KvCacheHigh { model: model(), usage: 1.0 },
+            Event::KvCacheRecovered { model: model(), usage: 0.0 },
+        ];
+        let names: Vec<_> = all.iter().map(Event::name).collect();
+        assert_eq!(names, Event::NAMES);
     }
 
     #[test]

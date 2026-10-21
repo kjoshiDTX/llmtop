@@ -6,7 +6,7 @@
 //! not tokio's, because no one holds it across an `.await`: lock, copy or
 //! write, unlock.
 
-use crate::backend::Backend;
+use crate::backend::{Backend, BackendId};
 use crate::detect::{Detector, Event, Thresholds};
 use crate::record::Recorder;
 use crate::snapshot::Snapshot;
@@ -24,7 +24,7 @@ const MAX_ALERTS: usize = 100;
 #[derive(Debug, Clone)]
 pub struct Alert {
     pub at: DateTime<Local>,
-    pub backend: String,
+    pub backend: BackendId,
     pub event: Event,
 }
 
@@ -39,14 +39,18 @@ pub enum BackendStatus {
 #[derive(Debug, Default)]
 pub struct State {
     pub system: Option<SystemStats>,
-    /// Keyed by backend name, so the table order is stable.
-    pub backends: BTreeMap<String, BackendStatus>,
-    /// Oldest first.
+    /// A BTreeMap keeps the table order stable between frames.
+    pub backends: BTreeMap<BackendId, BackendStatus>,
+    /// The most recent alerts, oldest first.
     pub alerts: VecDeque<Alert>,
+    /// Every alert since startup, counted per backend and kind of event, for
+    /// the exporter. Unlike `alerts`, nothing is dropped.
+    pub alert_counts: BTreeMap<(BackendId, &'static str), u64>,
 }
 
 impl State {
     fn push_alert(&mut self, alert: Alert) {
+        *self.alert_counts.entry((alert.backend.clone(), alert.event.name())).or_default() += 1;
         if self.alerts.len() == MAX_ALERTS {
             self.alerts.pop_front();
         }
@@ -99,12 +103,15 @@ pub fn spawn_poller<B: Backend + 'static>(
     shared: Arc<Shared>,
     config: PollConfig,
 ) -> JoinHandle<()> {
-    let name = backend.name().to_string();
+    let id = backend.id().clone();
     shared.update(|s| {
-        s.backends.insert(name.clone(), BackendStatus::Pending);
+        s.backends.insert(id.clone(), BackendStatus::Pending);
+        for name in Event::NAMES {
+            s.alert_counts.insert((id.clone(), name), 0);
+        }
     });
 
-    // `async move` moves `backend`, `shared`, `name` and `config` into the
+    // `async move` moves `backend`, `shared`, `id` and `config` into the
     // task, which must own everything it uses because it may outlive this
     // function. The detector is created inside, so the task alone owns it.
     tokio::spawn(async move {
@@ -117,7 +124,7 @@ pub fn spawn_poller<B: Backend + 'static>(
             let fetched = backend.fetch().await;
             let now = Instant::now();
             if let Some(recorder) = &config.recorder
-                && let Err(err) = recorder.write(&name, now, &fetched)
+                && let Err(err) = recorder.write(&id, now, &fetched)
             {
                 eprintln!("llmtop: recording failed: {err:#}");
             }
@@ -129,10 +136,10 @@ pub fn spawn_poller<B: Backend + 'static>(
                 Err(err) => BackendStatus::Down(format!("{err:#}")),
             };
             shared.update(|s| {
-                s.backends.insert(name.clone(), status);
+                s.backends.insert(id.clone(), status);
                 let at = Local::now();
                 for event in events {
-                    s.push_alert(Alert { at, backend: name.clone(), event });
+                    s.push_alert(Alert { at, backend: id.clone(), event });
                 }
             });
             if ticker.is_none() {
@@ -158,4 +165,21 @@ pub fn spawn_system_sampler(shared: Arc<Shared>, every: Option<Duration>) -> Joi
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alert_counts_survive_the_alert_list_cap() {
+        let id = BackendId { kind: "vllm", instance: "x".into() };
+        let mut state = State::default();
+        for _ in 0..MAX_ALERTS + 5 {
+            let event = Event::KvCacheHigh { model: "m".into(), usage: 0.95 };
+            state.push_alert(Alert { at: Local::now(), backend: id.clone(), event });
+        }
+        assert_eq!(state.alerts.len(), MAX_ALERTS);
+        assert_eq!(state.alert_counts[&(id, "kv_cache_high")], MAX_ALERTS as u64 + 5);
+    }
 }

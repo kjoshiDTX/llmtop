@@ -3,7 +3,7 @@
 //! Ollama has no endpoint for throughput: token counts only come back in the
 //! responses to your own requests. So this adapter leaves tokens per second empty.
 
-use super::{get_text, normalize_url, Backend};
+use super::{get_text, Backend, BackendId};
 use crate::snapshot::{ModelStats, Placement, Snapshot};
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -49,15 +49,15 @@ impl LoadedModel {
 }
 
 pub struct Ollama {
-    name: String,
+    id: BackendId,
     base_url: String,
     http: reqwest::Client,
 }
 
 impl Ollama {
     pub fn new(url: &str, http: reqwest::Client) -> Self {
-        let (base_url, host) = normalize_url(url);
-        Self { name: format!("ollama {host}"), base_url, http }
+        let (base_url, id) = BackendId::from_url("ollama", url);
+        Self { id, base_url, http }
     }
 }
 
@@ -66,8 +66,8 @@ impl Backend for Ollama {
     /// what Ollama sent.
     type Raw = String;
 
-    fn name(&self) -> &str {
-        &self.name
+    fn id(&self) -> &BackendId {
+        &self.id
     }
 
     async fn fetch(&mut self) -> Result<String> {

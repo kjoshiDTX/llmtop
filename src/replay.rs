@@ -17,7 +17,7 @@ fn replay<B: Backend>(mut backend: B, recording: &str) -> Vec<Event> {
         // `B::Raw` names the adapter's own raw type, so serde knows what to decode.
         let line: Line<B::Raw> =
             serde_json::from_str(text).unwrap_or_else(|e| panic!("line {}: {e}", n + 1));
-        if line.backend != backend.name() {
+        if line.backend != backend.id().to_string() {
             continue;
         }
         let now = t0 + Duration::from_millis(line.t_ms);
