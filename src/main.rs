@@ -1,5 +1,9 @@
 mod backend;
+mod detect;
 mod prom;
+mod record;
+#[cfg(test)]
+mod replay;
 mod snapshot;
 mod state;
 mod system;
@@ -8,7 +12,9 @@ mod table;
 use anyhow::Result;
 use backend::{LlamaCpp, Ollama, Vllm};
 use clap::Parser;
-use state::{spawn_poller, spawn_system_sampler, Shared};
+use record::Recorder;
+use state::{spawn_poller, spawn_system_sampler, PollConfig, Shared};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -35,6 +41,10 @@ struct Args {
     /// Refresh every N seconds instead of printing once.
     #[arg(short, long, value_name = "SECS")]
     watch: Option<u64>,
+
+    /// Append every raw backend response to FILE as JSON lines, for replay tests.
+    #[arg(long, value_name = "FILE")]
+    record: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -45,17 +55,24 @@ async fn main() -> Result<()> {
     // Subscribe before any task starts, so no early update is missed.
     let mut changed = shared.changed.subscribe();
     let http = backend::http_client()?;
+    let config = PollConfig {
+        every,
+        thresholds: detect::Thresholds::default(),
+        recorder: args.record.as_deref().map(Recorder::create).transpose()?.map(Arc::new),
+    };
 
     // `Arc::clone` copies the pointer, not the state: every task shares one `Shared`.
     let mut tasks = vec![spawn_system_sampler(Arc::clone(&shared), every)];
     if !args.no_ollama {
-        tasks.push(spawn_poller(Ollama::new(&args.ollama, http.clone()), Arc::clone(&shared), every));
+        let ollama = Ollama::new(&args.ollama, http.clone());
+        tasks.push(spawn_poller(ollama, Arc::clone(&shared), config.clone()));
     }
     for url in &args.vllm {
-        tasks.push(spawn_poller(Vllm::new(url, http.clone()), Arc::clone(&shared), every));
+        tasks.push(spawn_poller(Vllm::new(url, http.clone()), Arc::clone(&shared), config.clone()));
     }
     for url in &args.llamacpp {
-        tasks.push(spawn_poller(LlamaCpp::new(url, http.clone()), Arc::clone(&shared), every));
+        let llamacpp = LlamaCpp::new(url, http.clone());
+        tasks.push(spawn_poller(llamacpp, Arc::clone(&shared), config.clone()));
     }
 
     if every.is_none() {

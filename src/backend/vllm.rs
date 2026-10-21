@@ -2,10 +2,10 @@
 //! `model_name` label, and with data parallelism there is one series per
 //! engine (the `engine` label), so values are combined per model.
 
-use super::{normalize_url, Backend, CounterRate};
+use super::{get_text, normalize_url, Backend, CounterRate};
 use crate::prom;
 use crate::snapshot::{ModelStats, Snapshot};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
@@ -24,26 +24,22 @@ impl Vllm {
 }
 
 impl Backend for Vllm {
+    /// The `/metrics` response body.
+    type Raw = String;
+
     fn name(&self) -> &str {
         &self.name
     }
 
-    async fn poll(&mut self) -> Result<Snapshot> {
-        let url = format!("{}/metrics", self.base_url);
-        let text = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .with_context(|| format!("could not reach {url}"))?
-            .error_for_status()?
-            .text()
-            .await?;
-        Ok(snapshot_from_metrics(&text, &mut self.rates, Instant::now()))
+    async fn fetch(&mut self) -> Result<String> {
+        get_text(&self.http, &format!("{}/metrics", self.base_url)).await
+    }
+
+    fn parse(&mut self, raw: &String, now: Instant) -> Result<Snapshot> {
+        Ok(snapshot_from_metrics(raw, &mut self.rates, now))
     }
 }
 
-/// Kept separate from `poll` so tests can feed it recorded text and fake times.
 fn snapshot_from_metrics(text: &str, rates: &mut CounterRate, now: Instant) -> Snapshot {
     let samples = prom::parse(text);
 

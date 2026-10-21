@@ -10,28 +10,52 @@ llama.cpp localhost:8089   qwen2.5-0.5b                      -  -             - 
 ollama localhost:11434     qwen2.5:0.5b                1.4 GiB  GPU           -    -    -       -
 ```
 
+Below the table, an alerts list reports state changes in plain language. Warnings are marked `!`:
+
+```
+ALERTS
+17:39:52   ollama localhost:11434: qwen2.5:0.5b loaded
+17:39:52 ! ollama localhost:11434: qwen2.5:0.5b is running entirely on CPU; generation will be much slower
+```
+
 ## Usage
 
 ```sh
 cargo run -- --watch 2                                  # Ollama only, refresh every 2 s
 cargo run -- --vllm gpu1:8000 --vllm gpu2:8000 -w 2     # several vLLM workers
 cargo run -- --llamacpp localhost:8080 --no-ollama      # llama.cpp only, print once
+cargo run -- -w 1 --record session.jsonl                # also save raw responses for replay tests
 ```
 
 Ollama is polled at `$OLLAMA_HOST` or `localhost:11434` unless `--no-ollama` is given. Tokens per second needs two polls, so it only appears in `--watch` mode.
 
 ## What each backend reports
 
-| Column | Ollama (`/api/ps`) | vLLM (`/metrics`) | llama.cpp (`/metrics`, `/v1/models`) |
+| Column | Ollama (`/api/ps`) | vLLM (`/metrics`) | llama.cpp (`/metrics`, `/slots`, `/v1/models`) |
 |---|---|---|---|
 | SIZE, PLACEMENT | `size`, `size_vram` | – | – |
-| KV | – | `kv_cache_usage_perc` (fullest engine) | only on older builds (`kv_cache_usage_ratio`) |
+| KV | – | `kv_cache_usage_perc` (fullest engine) | tokens held by busy slots ÷ total slot context, from `/slots` |
 | RUN / WAIT | – | `num_requests_running` / `_waiting`, summed over engines | `requests_processing` / `requests_deferred` |
 | TOK/S | – (see below) | rate of `generation_tokens_total` | rate of `n_decode_total` × `n_busy_slots_per_decode` |
 
 - **Ollama throughput:** Ollama only reports token counts in the responses to your own requests, and has no endpoint for other clients' throughput. Getting it would take a proxy in front of Ollama or a periodic probe request.
 - **llama.cpp throughput:** `tokens_predicted_total` only moves when a request finishes, so llmtop estimates from decode steps instead. The estimate is exact for one slot generating text.
-- **llama.cpp needs `--metrics`**, or `/metrics` returns 501.
+- **llama.cpp needs `--metrics`**, or `/metrics` returns 501. Current releases don't export KV-cache usage, so it comes from `/slots`. Idle slots count as empty even when they keep a cached prompt, because that cache can be reused.
+
+## Alerts
+
+Each backend's polling task runs a `Detector` (`src/detect.rs`), which turns snapshots into events on transitions only:
+
+| Event | When |
+|---|---|
+| Running partly/entirely on CPU, back on GPU | Ollama's `size_vram` drops below `size`, or recovers. A model first seen on CPU alerts too |
+| KV cache high, back down | Usage reaches 90%; clears below 80%, so a cache hovering near 90% doesn't flap |
+| Swapped out for X | A model disappears and another appears within 30 s |
+| Reloaded | The same model disappears and comes back within 30 s |
+| Loaded, unloaded | A model appears with nothing departed, or is gone for more than 30 s |
+| Unreachable, reachable again | The poll fails, or succeeds after failing |
+
+Models already loaded when llmtop starts are the baseline, not "loaded" events.
 
 ## Layout
 
@@ -42,8 +66,12 @@ Ollama is polled at `$OLLAMA_HOST` or `localhost:11434` unless `--no-ollama` is 
 | `src/backend/{ollama,vllm,llamacpp}.rs` | One adapter per runtime |
 | `src/prom.rs` | Prometheus text-format parser (zero-copy where possible) |
 | `src/state.rs` | `Arc<Shared>` with an `RwLock<State>`; one tokio task per backend |
+| `src/detect.rs` | Enum state machines that turn snapshots into alerts |
+| `src/record.rs` | `--record`: raw responses as JSON lines |
+| `src/replay.rs` | Tests that replay recordings through the real parsers and detector |
 | `src/table.rs` | Text rendering |
 | `fixtures/` | llama.cpp responses recorded from llama-server 0.6.0; a hand-written vLLM sample |
+| `fixtures/replay/` | Recorded sessions: Ollama CPU fallback, Ollama model swaps, llama.cpp KV cache filling |
 
 ## Roadmap
 
@@ -51,6 +79,6 @@ Ollama is polled at `$OLLAMA_HOST` or `localhost:11434` unless `--no-ollama` is 
 |---|---|---|
 | 1 | CLI that polls Ollama and sysinfo and prints a table | done |
 | 2 | `Backend` trait with Ollama, vLLM and llama.cpp adapters, polled concurrently | done |
-| 3 | Enum state machine that detects GPU→CPU fallback, KV cache filling, model swaps; replay tests | |
+| 3 | Enum state machine that detects GPU→CPU fallback, KV cache filling, model swaps; replay tests | done |
 | 4 | axum `/metrics` exporter and a Grafana dashboard | |
 | 5 | ratatui dashboard and cross-compiled releases from GitHub Actions | |

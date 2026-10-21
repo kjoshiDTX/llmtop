@@ -9,30 +9,50 @@ pub use ollama::Ollama;
 pub use vllm::Vllm;
 
 use crate::snapshot::Snapshot;
-use anyhow::Result;
+use anyhow::{Context, Result};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::future::Future;
 use std::time::{Duration, Instant};
 
 /// One LLM runtime llmtop can watch.
 ///
-/// `poll` is written as "returns a future that is `Send`" rather than as an
-/// `async fn`, because each backend runs in its own `tokio::spawn`ed task and
-/// tokio may move tasks between threads. Implementations can still use
-/// `async fn poll`; the compiler checks that the future they produce is `Send`.
+/// A poll is two steps: `fetch` does the network I/O and returns the raw
+/// responses, `parse` turns them into a `Snapshot`. Keeping them apart lets
+/// `--record` save exactly what the server sent, and lets tests replay those
+/// recordings through the same `parse` with no network.
 pub trait Backend: Send {
+    /// What one `fetch` returns. An associated type: each adapter picks its
+    /// own (a single response body, or several), and the trait's users can
+    /// still name it as `B::Raw`. The bounds let it be written to and read
+    /// back from a recording.
+    type Raw: Serialize + DeserializeOwned + Send;
+
     /// A label such as `vllm localhost:8000`. The `&str` borrows from `self`.
     fn name(&self) -> &str;
 
+    /// Written as "returns a future that is `Send`" rather than as an
+    /// `async fn`, because each backend runs in its own `tokio::spawn`ed task
+    /// and tokio may move tasks between threads. Implementations can still use
+    /// `async fn`; the compiler checks that the future they produce is `Send`.
+    fn fetch(&mut self) -> impl Future<Output = Result<Self::Raw>> + Send;
+
     /// Takes `&mut self` so adapters can keep state between polls, such as the
-    /// previous counter values used to compute tokens per second.
-    fn poll(&mut self) -> impl Future<Output = Result<Snapshot>> + Send;
+    /// previous counter values used to compute tokens per second. `now` is
+    /// passed in rather than read from the clock so replays control time.
+    fn parse(&mut self, raw: &Self::Raw, now: Instant) -> Result<Snapshot>;
 }
 
 /// One client shared by every backend. `reqwest::Client` is a handle to a
 /// connection pool behind an `Arc`, so cloning it is cheap and shares the pool.
 pub fn http_client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder().timeout(Duration::from_secs(3)).build()?)
+}
+
+async fn get_text(http: &reqwest::Client, url: &str) -> Result<String> {
+    let resp = http.get(url).send().await.with_context(|| format!("could not reach {url}"))?;
+    Ok(resp.error_for_status()?.text().await?)
 }
 
 /// Turns `http://localhost:8000/` into `("http://localhost:8000", "localhost:8000")`.

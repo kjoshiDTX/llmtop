@@ -3,10 +3,11 @@
 //! Ollama has no endpoint for throughput: token counts only come back in the
 //! responses to your own requests. So this adapter leaves tokens per second empty.
 
-use super::{normalize_url, Backend};
+use super::{get_text, normalize_url, Backend};
 use crate::snapshot::{ModelStats, Placement, Snapshot};
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use std::time::Instant;
 
 /// Mirrors the JSON from `GET /api/ps`. Only the fields llmtop uses are
 /// declared; serde ignores the rest, so new Ollama fields won't break parsing.
@@ -61,24 +62,27 @@ impl Ollama {
 }
 
 impl Backend for Ollama {
+    /// The `/api/ps` response body, kept as text so recordings hold exactly
+    /// what Ollama sent.
+    type Raw = String;
+
     fn name(&self) -> &str {
         &self.name
     }
 
-    async fn poll(&mut self) -> Result<Snapshot> {
-        let url = format!("{}/api/ps", self.base_url);
-        let resp: PsResponse = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .with_context(|| format!("could not reach {url}"))?
-            .error_for_status()?
-            .json()
-            .await
-            .context("Ollama returned JSON in an unexpected shape")?;
-        Ok(Snapshot { models: resp.models.into_iter().map(LoadedModel::into_stats).collect() })
+    async fn fetch(&mut self) -> Result<String> {
+        get_text(&self.http, &format!("{}/api/ps", self.base_url)).await
     }
+
+    fn parse(&mut self, raw: &String, _now: Instant) -> Result<Snapshot> {
+        parse_ps(raw)
+    }
+}
+
+fn parse_ps(body: &str) -> Result<Snapshot> {
+    let resp: PsResponse =
+        serde_json::from_str(body).context("Ollama returned JSON in an unexpected shape")?;
+    Ok(Snapshot { models: resp.models.into_iter().map(LoadedModel::into_stats).collect() })
 }
 
 #[cfg(test)]
@@ -102,8 +106,7 @@ mod tests {
 
     #[test]
     fn maps_ps_response_to_stats() {
-        let resp: PsResponse = serde_json::from_str(PS_JSON).unwrap();
-        let stats: Vec<_> = resp.models.into_iter().map(LoadedModel::into_stats).collect();
+        let stats = parse_ps(PS_JSON).unwrap().models;
         assert_eq!(stats[0].name, "llama3.1:8b");
         assert_eq!(stats[0].size_bytes, Some(6_000_000_000));
         assert_eq!(stats[0].placement, Some(Placement::Split(0.75)));

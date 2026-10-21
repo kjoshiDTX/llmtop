@@ -1,11 +1,15 @@
 //! Renders the shared state as plain text. Returns a `String` instead of
 //! printing so tests can check the output.
 
+use crate::detect::Severity;
 use crate::snapshot::{ModelStats, Placement};
 use crate::state::{BackendStatus, State};
 use std::fmt::Write;
 
 const HEADER: [&str; 8] = ["BACKEND", "MODEL", "SIZE", "PLACEMENT", "KV", "RUN", "WAIT", "TOK/S"];
+
+/// How many of the most recent alerts to show under the table.
+const ALERTS_SHOWN: usize = 8;
 
 pub fn render(state: &State) -> String {
     let mut out = String::new();
@@ -48,6 +52,24 @@ pub fn render(state: &State) -> String {
                     let _ = writeln!(out, "{}", row(model_cells(&name, m)));
                 }
             }
+        }
+    }
+
+    if !state.alerts.is_empty() {
+        out.push_str("\nALERTS\n");
+        let skip = state.alerts.len().saturating_sub(ALERTS_SHOWN);
+        for alert in state.alerts.iter().skip(skip) {
+            let mark = match alert.event.severity() {
+                Severity::Warning => '!',
+                Severity::Info => ' ',
+            };
+            let _ = writeln!(
+                out,
+                "{} {mark} {}: {}",
+                alert.at.format("%H:%M:%S"),
+                alert.backend,
+                alert.event
+            );
         }
     }
     out
@@ -145,5 +167,33 @@ mod tests {
         assert!(out.contains("no models loaded"));
         let qwen = out.lines().find(|l| l.contains("qwen")).unwrap();
         assert!(qwen.contains("82%"));
+        assert!(!out.contains("ALERTS"));
+    }
+
+    #[test]
+    fn renders_alerts_newest_last_with_warning_mark() {
+        use crate::detect::Event;
+        use crate::state::Alert;
+
+        let mut state = State::default();
+        state.backends.insert("ollama x".into(), BackendStatus::Up(Snapshot::default()));
+        for i in 0..10 {
+            state.alerts.push_back(Alert {
+                at: chrono::Local::now(),
+                backend: "ollama x".into(),
+                event: Event::ModelLoaded { model: format!("m{i}") },
+            });
+        }
+        state.alerts.push_back(Alert {
+            at: chrono::Local::now(),
+            backend: "ollama x".into(),
+            event: Event::FellBackToCpu { model: "q".into(), gpu_share: 0.0 },
+        });
+
+        let out = render(&state);
+        let alerts: Vec<&str> = out.lines().skip_while(|l| *l != "ALERTS").skip(1).collect();
+        assert_eq!(alerts.len(), ALERTS_SHOWN);
+        assert!(alerts[0].ends_with("ollama x: m3 loaded"));
+        assert!(alerts[7].contains(" ! ollama x: q is running entirely on CPU"));
     }
 }
